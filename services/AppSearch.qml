@@ -58,7 +58,37 @@ Singleton {
         entry: a
     }))
 
-    function fuzzyQuery(search: string): var { // Idk why list<DesktopEntry> doesn't work
+    // my: query typed with the wrong keyboard layout (ua instead of us),
+    // e.g. "вшісщкв" -> "discord". Keys follow the standard xkb "ua" layout.
+    readonly property var uaToUsKeys: ({
+        "й": "q", "ц": "w", "у": "e", "к": "r", "е": "t", "н": "y", "г": "u",
+        "ш": "i", "щ": "o", "з": "p", "х": "[", "ї": "]", "ґ": "\\",
+        "ф": "a", "і": "s", "в": "d", "а": "f", "п": "g", "р": "h", "о": "j",
+        "л": "k", "д": "l", "ж": ";", "є": "'",
+        "я": "z", "ч": "x", "с": "c", "м": "v", "и": "b", "т": "n", "ь": "m",
+        "б": ",", "ю": ".", ".": "/"
+    })
+
+    function uaToUsLayout(str: string): string {
+        return Array.from(str.toLowerCase()).map(c => root.uaToUsKeys[c] ?? c).join("");
+    }
+
+    function fuzzyQuery(search: string): var {
+        if (!/[\u0400-\u04FF]/.test(search))
+            return root.scoredQuery(search).map(item => item.entry);
+
+        // Search both as typed (Ukrainian app names) and layout-converted, best score first
+        const merged = root.scoredQuery(search).concat(root.scoredQuery(root.uaToUsLayout(search)))
+            .sort((a, b) => b.score - a.score);
+        const seen = new Set();
+        return merged.filter(item => {
+            if (seen.has(item.entry.id)) return false;
+            seen.add(item.entry.id);
+            return true;
+        }).map(item => item.entry);
+    }
+
+    function scoredQuery(search: string): var { // Idk why list<DesktopEntry> doesn't work
         if (root.sloppySearch) {
             const results = list.map(obj => ({
                 entry: obj,
@@ -66,15 +96,15 @@ Singleton {
             })).filter(item => item.score > root.scoreThreshold)
                 .sort((a, b) => b.score - a.score)
             return results
-                .map(item => item.entry)
         }
 
         return Fuzzy.go(search, preppedNames, {
             all: true,
             key: "name"
-        }).map(r => {
-            return r.obj.entry
-        });
+        }).map(r => ({
+            entry: r.obj.entry,
+            score: r.score
+        }));
     }
 
     function iconExists(iconName) {
